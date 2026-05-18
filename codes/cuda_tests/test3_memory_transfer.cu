@@ -72,12 +72,13 @@ int main() {
 
     // Copy data from host to device
     //******* complete code here *******/
-
+    cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
     //**********************************/
 
     //Set the device memory to specific values    
     //******* complete code here *******/
-
+    cudaMemset(d_D, 0xFF, N*sizeof(int));
     //**********************************/
 
     getchar(); //Pause point
@@ -114,7 +115,7 @@ int main() {
 
     // Copy the result from device to host
     //******* complete code here *******/
-
+    cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
     //**********************************/
 
     // Verify the result

@@ -10,9 +10,8 @@ __global__ void checkMemoryAllocate(int N, size_t size, double *d_A) {
     int idx = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
     if (idx < N) {
-
+        d_A[idx] = (double)idx;
         printf("<<gpu>> Thread %d in block %d - d_A[%d] = %.0lf \n", ithread, iblock, idx, d_A[idx]);
-
     }
        
 }
@@ -25,12 +24,13 @@ __global__ void registerMemoryAllocate(int N, size_t size, double *d_A) {
     int idx = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
     //******* complete code here *******/
-
+    double rA;
     //**********************************/
 
     if (idx < N) {
         //******* complete code here *******/
-
+        rA = (double)idx;
+        d_A[idx] = rA;
         //**********************************/
 
         printf("<<gpu>> Thread %d in block %d - d_A[%d] = %.0lf \n", ithread, iblock, idx, d_A[idx]);
@@ -47,12 +47,23 @@ __global__ void sharedMemoryAllocate(int N, size_t size, double *d_A) {
     int idx = ( blockIdx.x * blockDim.x ) + threadIdx.x;
 
     //******* complete code here *******/
-
+    extern __shared__ double shared_A[];
+    if(idx < N)
+    {
+        if(ithread < 127)
+        {
+            shared_A[ithread] = (double)idx;
+        }
+        else
+        {
+            shared_A[ithread] = 0.0;
+        }
+    }
     //**********************************/       
 
     if (idx < N) {
         //******* complete code here *******/
-
+        d_A[idx] = shared_A[ithread];
         //**********************************/
 
         printf("<<gpu>> Thread %d in block %d - d_A[%d] = %.0lf \n", ithread, iblock, idx, d_A[idx]);
@@ -74,7 +85,8 @@ int main() {
 
     // Allocate memory on the host
     //******* complete code here *******/
-
+    size_t size = N * sizeof(double);
+    double *h_A = (double*)malloc(size);
     //**********************************/
 
     // Select a GPU
@@ -90,15 +102,16 @@ int main() {
     cudaMemGetInfo(&freeMemory, &totalMemory);
     std::cout << "  Total Global Memory: " << totalMemory / (1024 * 1024) << " MB" << std::endl;
     std::cout << "  Free Memory: " << freeMemory / (1024 * 1024) << " MB" << std::endl;
-           
-    getchar(); //Pause point
+    
+    //getchar(); //Pause point
 
 
 
 
     // Allocate global memory on the device
     //******* complete code here *******/
-
+    double* d_A;
+    err = cudaMalloc((void**) &d_A, size);
     //**********************************/
 
     // Check if the allocation was successful
@@ -111,17 +124,24 @@ int main() {
     cudaMemGetInfo(&freeMemory, &totalMemory);
     std::cout << "  Updated free Memory: " << freeMemory / (1024 * 1024) << " MB" << std::endl;
 
-    getchar(); //Pause point
-
-
-
-
+    //getchar(); //Pause point
 
     //Start IO time .....................................
     stime1=clock();
 
     // Launch parallel kernel
     //******* complete code here *******/
+    int threadsPerBlock = 256;
+    int blocksPerGrid = N / threadsPerBlock + 1;
+
+    /////// checkMemoryAllocate<<<blocksPerGrid, threadsPerBlock>>>(N, size, d_A);
+
+    /////// size_t sharedMemorySize = threadsPerBlock * sizeof(double);
+    /////// sharedMemoryAllocate<<<blocksPerGrid, threadsPerBlock, sharedMemorySize>>>(N, size, d_A);
+
+    // Se podría poner sharedMemorySize aunque no haga nada aquí
+    registerMemoryAllocate<<<blocksPerGrid, threadsPerBlock>>>(N, size, d_A);
+
 
     //**********************************/
 
@@ -136,7 +156,7 @@ int main() {
     std::cerr << "  Execution time: " << exec_time << std::endl; 
     //End IO time .....................................   
 
-    getchar(); //Pause point
+    //getchar(); //Pause point
 
 
 
@@ -144,7 +164,7 @@ int main() {
 
     // Free device memory
     //******* complete code here *******/
-
+    cudaFree(d_A);
     //**********************************/
 
     // Check the updated free memory
