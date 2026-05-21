@@ -2,7 +2,7 @@
 //  ===========================================================================================
 //   Square grid
 //  ===========================================================================================
-//   Version 1.0 - Mar 2025
+//   Version 1.0 - May 2026
 //  ===========================================================================================
 //   Computational Hydraulics Group - University of Zaragoza   
 //  =========================================================================================== 
@@ -27,71 +27,102 @@ int read_boundary_configuration(char *tempfile,
 	double *QIN, double *HIN, 
 	double *HOUT, double *ZSOUT);	
 
-void h_initialize_variables(int nCells,
+void initialize_variables(int nCells,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *n, 
 	double *DU1, double *DU2, double *DU3);
 
-int h_set_inlet_initial_conditions(int nCells,
+int set_inlet_initial_conditions(int nCells,
 	double *h, double *u, double *M,
 	double QIN, double HIN);
 
-int h_set_outlet_initial_conditions(int nCells,
+int set_outlet_initial_conditions(int nCells,
 	double *h, double *u, double *M, double *zb,
 	double HOUT, double ZSOUT);
 
-int h_compute_initial_flow_variables(int nCells,
+int compute_initial_flow_variables(int nCells,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *n, double n1);
 
 
-void h_compute_water_mass(int nCells,
+void compute_water_mass(int nCells,
 	double *h, double area, double *massWt);
 
 
-void h_compute_flow_time_step_2D(int nX, int nY,
+void compute_flow_time_step_2D(int nX, int nY,
 		double *h, double *ux, double *uy, double dx,
 		double *dtSW);
 
-void h_compute_x_fluxes(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void compute_x_fluxes(int nX, int nY,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *zb, double *n,
 	double *DU1, double *DU2, double *DU3,
 	double dx);
 
-void h_compute_y_fluxes(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void compute_y_fluxes(int nX, int nY,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *zb, double *n,
 	double *DU1, double *DU2, double *DU3,
 	double dx);
 
-void h_check_depth_positivity(int nCells, 
+void check_depth_positivity(int nCells, 
 	double *h, double *DU1, double dx, double *dt);
 
-void h_update_cells_2D(int nCells, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void update_cells_2D(int nCells, 
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *DU1, double *DU2, double *DU3,
 	double dx,double dt);
 
-void h_wet_dry_x(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void wet_dry_x(int nX, int nY,
 	double *h, double *qx, double *ux,	double *zb);
 
-void h_wet_dry_y(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void wet_dry_y(int nX, int nY,
 	double *h, double *qy, double *uy,	double *zb);
 
-void h_set_west_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_west_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy,
 	double QIN, double HIN);
 
-void h_set_east_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_east_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy, double *zb,
 	double HOUT, double ZSOUT);
 
-void h_set_north_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_north_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy);
 
-void h_set_south_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_south_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy);
 
 int write_vtk_cells(const char *filename, int nX, int nY, double *x, double *y, 
 	double *zb, double *h, double *ux, double *uy);
+
+#if __CUDACC__
+void queryAndSetDevice(int device_id);
+#endif

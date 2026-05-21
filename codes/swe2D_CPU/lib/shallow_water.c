@@ -2,7 +2,7 @@
 //  ===========================================================================================
 //   Square grid
 //  ===========================================================================================
-//   Version 1.0 - Mar 2025
+//   Version 1.0 - May 2026
 //  ===========================================================================================
 //   Computational Hydraulics Group - University of Zaragoza   
 //  =========================================================================================== 
@@ -183,7 +183,7 @@ int read_boundary_configuration(char *tempfile,
 
 
 
-void h_initialize_variables(int nCells,
+void initialize_variables(int nCells,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *n, 
 	double *DU1, double *DU2, double *DU3){
@@ -207,7 +207,7 @@ void h_initialize_variables(int nCells,
 
 
 
-int h_compute_initial_flow_variables(int nCells,
+int compute_initial_flow_variables(int nCells,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *n, double n1){
 
@@ -235,7 +235,7 @@ int h_compute_initial_flow_variables(int nCells,
 
 
 
-void h_compute_water_mass(int nCells,
+void compute_water_mass(int nCells,
 	double *h, double area, double *massWt){
 
 	(*massWt) = 0.0;
@@ -246,7 +246,7 @@ void h_compute_water_mass(int nCells,
 
 }
 
-void h_compute_flow_time_step_2D(int nX, int nY,
+void compute_flow_time_step_2D(int nX, int nY,
     double *h, double *ux, double *uy, double dx,
     double *dtSW) {
     
@@ -288,20 +288,13 @@ void h_compute_flow_time_step_2D(int nX, int nY,
 
 
 #ifdef __CUDACC__
-__global__ void d_compute_x_fluxes(int nX, int nY,
-	double *h, double *qx, double *qy, double *ux, double *uy, 
-	double *zb, double *n,
-  	double *DU1, double *DU2, double *DU3,
-	double dx)
-	{
-
-#else
-void h_compute_x_fluxes(int nX, int nY,
+	__global__  
+#endif
+void compute_x_fluxes(int nX, int nY,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *zb, double *n,
   	double *DU1, double *DU2, double *DU3,
 	double dx){
-#endif
 
 	double uxROE, uyROE, cROE;                		// ROE averaged variables
 	double lambda1, lambda2, lambda3;				// Eigenvalues
@@ -327,22 +320,21 @@ void h_compute_x_fluxes(int nX, int nY,
 	normalX=1.0;
 	normalY=0.0;
 
-#ifdef __CUDACC__
-	// cada hilo de la gpu necesita saber a qué i, j está accediendo
-	int idc = (blockIdx.x * blockDim.x) + threadIdx.x;
-	// Salvaguarda para que idx sea menor que el número total 
-	// de operaciones que queremos hacer
-	if(idx < (nX - 1) * nY)	
-	{
-		j = idc / (nX - 1)	// row
-		i = idc % (nX - 1)	// col
-#else
-   	// Process horizontal interfaces
+	#ifdef __CUDACC__
+		int idc = (blockIdx.x * blockDim.x) + threadIdx.x;
+		if(idc < (nX-1)*nY){
+		int j = idc / (nX-1); //row number
+		int i = idc % (nX-1); //column number
+
+		#else
+  	// Process horizontal interfaces
 	for (int j = 0; j < nY; j++) {     // Rows  
 		for (int i = 0; i < nX-1; i++) { // Columns  
-#endif
-            int left = IDX(i,j,nX);
-            int right = IDX(i+1,j,nX);
+	#endif
+
+      int left = IDX(i,j,nX);
+      int right = IDX(i+1,j,nX);
+
 			if(h[left] >= tol9 || h[right] >= tol9){			// Wet wall
 
 				// Averaged quantities at the walls
@@ -563,15 +555,18 @@ void h_compute_x_fluxes(int nX, int nY,
 				}
 
 			} // End wet walls
-#ifndef __CUDACC__
+
+		#ifndef __CUDACC__
 		}
-#endif
+		#endif
 	} // End of fluxes calculation - Wall loop				
 
 }
 
-
-void h_compute_y_fluxes(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void compute_y_fluxes(int nX, int nY,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *zb, double *n,
   	double *DU1, double *DU2, double *DU3,
@@ -600,11 +595,20 @@ void h_compute_y_fluxes(int nX, int nY,
 	//normal direction in Y
 	normalX=0.0;
 	normalY=1.0;
-	
 
-    // Process vertical interfaces
-	for (int j = 0; j < nY-1; j++) {     // Rows  
+	#ifdef __CUDACC__
+		int idc = (blockIdx.x * blockDim.x) + threadIdx.x;
+		if(idc < nX*(nY-1)){
+		int j = idc / nX; //row number
+		int i = idc % nX; //column number
+
+	#else
+		for (int j = 0; j < nY-1; j++) {  // Rows  
 		for (int i = 0; i < nX; i++) { // Columns  
+	#endif
+
+
+
 			int bottom =IDX(i,j,nX);
 			int top = IDX(i,j+1,nX);
 			if(h[bottom] >= tol9 || h[top] >= tol9){			// Wet wall
@@ -823,16 +827,18 @@ void h_compute_y_fluxes(int nX, int nY,
 				}
 
 			} // End wet walls
-		}
-	} // End of fluxes calculation - Wall loop				
 
+		#ifndef __CUDACC__
+		}
+		#endif
+	} // End of fluxes calculation - Wall loop				
 }
 
 
 
 
 
-void h_check_depth_positivity(int nCells, 
+void check_depth_positivity(int nCells, 
 	double *h, double *DU1, double dx, double *dt){
    		for(int ic = 0; ic < nCells; ic++){
 	double aux1;
@@ -851,24 +857,18 @@ void h_check_depth_positivity(int nCells,
 } 
 
 
-#ifdef  __CUDACC__
-__global__ void d_update_cells_2D(int nCells, 
+#ifdef __CUDACC__
+__global__ 
+#endif
+void update_cells_2D(int nCells, 
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *DU1, double *DU2, double *DU3,
 	double dx, double dt){
-	
-	int ic = ( blockIdx.x * blockDim.x ) + threadIdx.x;
-	// puede que el último bloque intente acceder a posiciones que no debe,
-	// para ello ponemos esta pequeña salvaguarda
-	if (ic < nCells)
-	{
+#ifdef __CUDACC__	
+	int ic = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if(ic < nCells){
 #else
-void h_update_cells_2D(int nCells, 
-	double *h, double *qx, double *qy, double *ux, double *uy, 
-	double *DU1, double *DU2, double *DU3,
-	double dx, double dt){
-	
-        for(int ic = 0; ic < nCells; ic++){
+  for(int ic = 0; ic < nCells; ic++){
 #endif
 		h[ic] = h[ic] - DU1[ic]*dt/dx;
 		qx[ic] = qx[ic] - DU2[ic]*dt/dx;
@@ -896,15 +896,28 @@ void h_update_cells_2D(int nCells,
 		// Reset U fluxes differences
 		DU1[ic]=0.0;
 		DU2[ic]=0.0;
-		DU3[ic]=0.0;		
-	}	// Este corchete cierra o el for o el if 
-		// dependiendo de si estamos en gpu o cpu (__CUDACC__)
+		DU3[ic]=0.0;
+
+	}			
+
 }  
 
-void h_wet_dry_x(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void wet_dry_x(int nX, int nY,
 	double *h, double *qx, double *ux,	double *zb){
+	
+	#ifdef __CUDACC__
+		int idc = blockIdx.x * blockDim.x + threadIdx.x;  
+		if (idc < (nX-1)*nY){ // Total number of horizontal interfaces  		
+		
+		int j = idc / (nX-1);  // Row number  
+		int i = idc % (nX-1);  // Column number within the valid range  
+	#else
 	for (int j = 0; j < nY; j++) {     // Rows  
 		for (int i = 0; i < nX-1; i++) { // Columns  
+	#endif
             int left = IDX(i,j,nX);
             int right = IDX(i+1,j,nX);
 			if((h[right] < tol9) && (h[left] + zb[left] <zb[right])){
@@ -915,16 +928,27 @@ void h_wet_dry_x(int nX, int nY,
 				qx[right]=0.0;
 				ux[right]=0.0;
 			}
+		#ifndef __CUDACC__
 		}
+		#endif
 	}
 }
 
-void h_wet_dry_y(int nX, int nY,
+#ifdef __CUDACC__
+	__global__  
+#endif
+void wet_dry_y(int nX, int nY,
 	double *h, double *qy, double *uy,	double *zb){
 
-	// Process vertical interfaces
+	#ifdef __CUDACC__
+		int idc = blockIdx.x * blockDim.x + threadIdx.x;  
+		if (idc < nX*(nY-1)){  // Total number of vertical interfaces   
+		int j = idc / nX;      // Row number  
+		int i = idc % nX;      // Column number within the valid range  
+	#else
 	for (int j = 0; j < nY-1; j++) {     // Rows  
 		for (int i = 0; i < nX; i++) { // Columns  
+	#endif
 			int bottom =IDX(i,j,nX);
 			int top = IDX(i,j+1,nX);
 			if((h[top] < tol9) && (h[bottom] + zb[bottom] <zb[top])){
@@ -935,26 +959,26 @@ void h_wet_dry_y(int nX, int nY,
 				qy[top]=0.0;
 				uy[top]=0.0;
 			}
+	#ifndef __CUDACC__
 		}
+	#endif
 	}
 }
 
 
+
 #ifdef __CUDACC__
-__global__ void d_set_west_boundary(int nX, int nY, double *h, 
-	double *qx, double *qy, double *ux, double *uy, 
-	double QIN, double HIN)
-	{
-		int j = (blockIdx.x * blockDim.x) + threadIdx.x;
-		// No estoy seguro de si estos corchetes cierran lo que deben, creo que sí
-		if (j < nY)
-		{
-#else
-void h_set_west_boundary(int nX, int nY, double *h, 
+	__global__  
+#endif
+void set_west_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy, 
 	double QIN, double HIN){
-	for(int j = 0; j < nY; j++) { // Column 0, all rows (west)
-	// TODO: El endif tal vez vaya una línea más abajo
+	
+#ifdef __CUDACC__
+	int j = (blockIdx.x * blockDim.x) + threadIdx.x;
+	if(j < nY){
+#else
+	for(int j = 0; j < nY; j++) { //Column 0, all rows
 #endif
 		int idx = IDX(0,j,nX);
 		
@@ -982,11 +1006,19 @@ void h_set_west_boundary(int nX, int nY, double *h,
 
 }
 
-void h_set_east_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_east_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy, double *zb,
 	double HOUT, double ZSOUT){
 		
-	for(int j = 0; j < nY; j++) { //
+	#ifdef __CUDACC__
+		int j = blockIdx.x * blockDim.x + threadIdx.x;  
+		if (j < nY){
+	#else
+		for(int j = 0; j < nY; j++) { //
+	#endif		
 		int idx = IDX(nX-1,j,nX);
 
 		if(HOUT > 0.0) { 
@@ -1018,9 +1050,18 @@ void h_set_east_boundary(int nX, int nY, double *h,
 }
 
 
-void h_set_north_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_north_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy){
-	for(int i = 0; i < nX; i++) {
+	
+	#ifdef __CUDACC__
+		int i = blockIdx.x * blockDim.x + threadIdx.x;  
+		if (i < nX){
+	#else
+		for(int i = 0; i < nX; i++) {
+	#endif
 		int idx = IDX(i,nY-1,nX);
 		qy[idx] = 0.0;
 		uy[idx]= 0.0;
@@ -1028,10 +1069,18 @@ void h_set_north_boundary(int nX, int nY, double *h,
 
 }
 
-void h_set_south_boundary(int nX, int nY, double *h, 
+#ifdef __CUDACC__
+	__global__  
+#endif
+void set_south_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy){
 		
-	for(int i = 0; i < nX; i++) {
+	#ifdef __CUDACC__
+		int i = blockIdx.x * blockDim.x + threadIdx.x;  
+		if (i < nX){ 
+	#else
+		for(int i = 0; i < nX; i++) {
+	#endif
 		int idx = IDX(i,0,nX);
 		qy[idx] = 0.0;
 		uy[idx]= 0.0;
@@ -1121,7 +1170,6 @@ int write_vtk_cells(const char *filename, int nX, int nY, double *x, double *y,
     return 0;
 }
 
-
 #if __CUDACC__
 void queryAndSetDevice(int device_id) {
     int device_count;
@@ -1165,3 +1213,4 @@ void queryAndSetDevice(int device_id) {
     printf("Device %d is now active.\n", current_device);
 }
 #endif
+

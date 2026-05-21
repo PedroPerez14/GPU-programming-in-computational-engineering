@@ -2,7 +2,7 @@
 //  ===========================================================================================
 //   Square grid
 //  ===========================================================================================
-//   Version 1.0 - Mar 2025
+//   Version 1.0 - May 2026
 //  ===========================================================================================
 //   Computational Hydraulics Group - University of Zaragoza   
 //  =========================================================================================== 
@@ -17,8 +17,6 @@
 #include <vector>
 #include <time.h>       			// clock_t, clock(), CLOCKS_PER_SEC
 #include <unistd.h>					// Para usleep()
-
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -53,12 +51,11 @@
 #define tol12 1e-12
 
 
-
 // Macros
 #define MIN(x,y) (((x)<(y)) ? (x) : (y))			// Macro to find the minimum of two numbers
 #define MAX(a,b) (((a)>(b)) ? (a) : (b))            // Macro to find the maximum of two numbers
 #define IDX(i, j, ncols) ((j) * (ncols) + (i))  
 
 
-// GPU MACROS
+// GPU macros
 #define nThreads 128
