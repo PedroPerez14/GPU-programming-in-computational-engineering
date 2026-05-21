@@ -9,6 +9,12 @@
 
 #include "define.h"
 #include "lib/shallow_water.h"
+#ifdef __CUDACC__
+	#include <cuda.h>
+	#include <cuda_runtime.h>
+	#include <cublas_v2.h>
+#endif
+
 
 
 // Inputs and storage
@@ -58,7 +64,12 @@ int main(){
 	fprintf(logFile,"\n\n>> Case:	");
 	fprintf(logFile,"\n");
 
+#ifdef __CUDACC__
+	queryAndSetDevice(0);
 
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+#endif
 
 // GEOMETRY DATA
 	// Load geometry data	
@@ -142,6 +153,32 @@ int main(){
 	DU1 = (double*) malloc( nCells* sizeof(double) );
 	DU2 = (double*) malloc( nCells* sizeof(double) );
 	DU3 = (double*) malloc( nCells* sizeof(double) );
+	/// Hay que generar una copia de estos arrays en la memoria de la GPU
+	/// (Primero hay que elegir GPU, no sé si lo hacemos en alguna parte)
+	#if __CUDACC__
+		int d_nX, d_nY;		// nX=rows, nY=cols
+		int d_nCells;
+		double d_dx, d_dt;
+
+		// variables, versión gpu
+		double *d_h, *d_qx, *d_qy, *d_ux, *d_uy;
+		double *d_n, *d_zb;
+		double *d_DU1, *d_DU2, *d_DU3;
+
+		cudaMalloc((void**)&d_h, nCells * sizeof(double));
+		cudaMalloc((void**)&d_qx, nCells * sizeof(double));
+		cudaMalloc((void**)&d_qy, nCells * sizeof(double));
+		cudaMalloc((void**)&d_ux, nCells * sizeof(double));
+		cudaMalloc((void**)&d_uy, nCells * sizeof(double));
+
+		cudaMalloc((void**)&d_n, nCells * sizeof(double));
+		cudaMalloc((void**)&d_zb, nCells * sizeof(double));
+
+		cudaMalloc((void**)&d_DU1, nCells * sizeof(double));
+		cudaMalloc((void**)&d_DU2, nCells * sizeof(double));
+		cudaMalloc((void**)&d_DU3, nCells * sizeof(double));
+	#endif
+
 
 	//read raster elevation
 	read_raster("input/elevation.input", nX, nY, zb);
@@ -175,6 +212,10 @@ int main(){
 	read_boundary_configuration(tempfile, 
 		&(QIN), &(HIN), 
 		&(HOUT), &(ZSOUT));	
+
+#ifdef __CUDACC__
+	double d_QIN, d_HIN;
+#endif
 
 
 	printf("\n   --------------------------------------------------");
@@ -237,12 +278,42 @@ int main(){
 	h_compute_initial_flow_variables( nCells,
 		h,  qx,  qy,  ux,  uy,  n,  n1);
 		
-	printf("\n\n>> Initial conditions loaded");
-	fprintf(logFile,"\n\n>> Initial conditions loaded");
+		#if __CUDACC__
+		// Move data into the GPU (me faltan muchas cosas xd)
+		
+		cudaMemcpy(d_nX, nX, sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_nY, nY, sizeof(int), cudaMemcpyHostToDevice);
 
+		cudaMemcpy(d_nCells, nCells, sizeof(int), cudeMemcpyHostToDevice);
+		cudaMemcpy(d_dx, dx, sizeof(double), cudeMemcpyHostToDevice);
+		cudaMemcpy(d_dt, dt, sizeof(double), cudeMemcpyHostToDevice);
+
+		cudaMemcpy(d_h, h, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_qx, qx, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_qy, qy, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_ux, ux, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_uy, uy, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		
+		cudaMemcpy(d_n, n, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_zb, zb, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		
+		cudaMemcpy(d_DU1, DU1, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_DU2, DU2, nCells*sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_DU3, DU3, nCells*sizeof(double), cudaMemcpyHostToDevice);
+
+		cudaMemcpy(d_QIN, QIN, sizeof(double), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_HIN, HIN, sizeof(double), cudaMemcpyHostToDevice);
+		#endif
+		
+		printf("\n\n>> Initial conditions loaded");
+		fprintf(logFile,"\n\n>> Initial conditions loaded");
 
 	// Initial mass balance
+	#if __CUDACC__
+	cublasDasum(handle, nCells, d_h, 1, &massWtn);
+	#else
 	h_compute_water_mass( nCells, h,  area,  &(massWtn));
+	#endif
 
 	printf("mass:%lf\n",massWtn);
 	Qin = 0.0;	
@@ -295,8 +366,17 @@ while(t <= simTime) {
 
 // FLUXES CALCULATION
 	// X-direction fluxes
+#ifdef __CUDACC__
+	d_compute_x_fluxes <<< ((nX - 1) * nY) / nThreads + 1, nThreads>>>
+		(d_nX, d_nY,
+    	d_h, d_qx, d_qy, d_ux, d_uy, d_zb, d_n, 
+		d_DU1, d_DU2, d_DU3, 
+		d_dx);
+#else
 	h_compute_x_fluxes(nX, nY,
     	h, qx, qy, ux, uy, zb, n, DU1, DU2, DU3, dx);
+#endif		// TODO: No sé si este endif va aquí, not 100% sure
+
 
 	// Y-direction fluxes
 	h_compute_y_fluxes(nX, nY,
@@ -310,32 +390,64 @@ while(t <= simTime) {
 
 	  
 // SHALLOW WATER CELL UPDATE
+#if __CUDACC__
+	d_update_cells_2D <<<nCells / nThreads + 1, nThreads>>>
+	(d_nCells,
+		d_h, d_qx, d_qy, d_ux, d_uy,
+		d_DU1, d_DU2, d_DU3,
+		d_dx, d_dt);
+
+	/// The rest of boundaries, GPU version
+	/// TODO: Adaptar estas funciones de debajo a GPU con CUDA
+
+	d_wet_dry_x(nX, nY,
+		h, qx, ux, zb);
+
+	d_wet_dry_y(nX, nY,
+		h, qy, uy, zb);
+	// West boundary
+	d_set_west_boundary <<<nY / nThreads + 1, nThreads>>>
+	(d_nX, d_nY, d_h, d_qx, d_qy, d_ux, d_uy, d_QIN, d_HIN);
+	// East boundary
+	d_set_east_boundary(nX, nY, h, qx, qy, ux, uy, zb, QIN, HIN);
+	// North boundary
+	d_set_north_boundary(nX, nY, h, qx, qy, ux, uy);
+	// South boundary
+	d_set_south_boundary(nX, nY, h, qx, qy, ux, uy);
+#else
+	/// CPU version
 	h_update_cells_2D(nCells,
 			h, qx, qy, ux, uy,
 			DU1, DU2, DU3,
 			dx, dt);
-	
 	h_wet_dry_x(nX, nY,
 		h, qx, ux, zb);
-
 	h_wet_dry_y(nX, nY,
 		h, qy, uy, zb);
-   // West boundary
-   h_set_west_boundary(nX, nY, h, qx, qy, ux, uy, QIN, HIN);
-   // East boundary
-   h_set_east_boundary(nX, nY, h, qx, qy, ux, uy, zb, QIN, HIN);
-   // North boundary
-   h_set_north_boundary(nX, nY, h, qx, qy, ux, uy);
-   // South boundary
-   h_set_south_boundary(nX, nY, h, qx, qy, ux, uy);
+	// West boundary
+	h_set_west_boundary(nX, nY, h, qx, qy, ux, uy, QIN, HIN);
+	// East boundary
+	/// TODO: Aquí ha dicho que podríamos cambiar QIN y HIN por los nombres
+	///			que tienen los parámetros de la función para que sean iguales 
+	h_set_east_boundary(nX, nY, h, qx, qy, ux, uy, zb, QIN, HIN);
+	// North boundary
+	h_set_north_boundary(nX, nY, h, qx, qy, ux, uy);
+	// South boundary
+	h_set_south_boundary(nX, nY, h, qx, qy, ux, uy);
+#endif	
+	
 
 // SIMULATION MONITORS
 	massWt0 = massWtn;
-	h_compute_water_mass( nCells,
-		h,  dx,  &(massWtn));
-
 	//printf("mass:%lf\n",massWtn);
-
+	/// h_compute_water_mass( nCells, h,  dx,  &(massWtn)); // TODO: dx o area?
+	#if __CUDACC__
+	cublasDasum(handle, nCells, d_h, 1, &massWtn);
+	massWtn *= area;
+	#else
+	h_compute_water_mass( nCells,
+		h,  area,  &(massWtn));
+	#endif
 
 	//Compute mass error
 	if(massWt0 != 0.0) { 

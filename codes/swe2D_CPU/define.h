@@ -58,3 +58,7 @@
 #define MIN(x,y) (((x)<(y)) ? (x) : (y))			// Macro to find the minimum of two numbers
 #define MAX(a,b) (((a)>(b)) ? (a) : (b))            // Macro to find the maximum of two numbers
 #define IDX(i, j, ncols) ((j) * (ncols) + (i))  
+
+
+// GPU MACROS
+#define nThreads 128

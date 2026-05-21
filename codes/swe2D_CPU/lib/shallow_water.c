@@ -287,12 +287,21 @@ void h_compute_flow_time_step_2D(int nX, int nY,
 }
 
 
+#ifdef __CUDACC__
+__global__ void d_compute_x_fluxes(int nX, int nY,
+	double *h, double *qx, double *qy, double *ux, double *uy, 
+	double *zb, double *n,
+  	double *DU1, double *DU2, double *DU3,
+	double dx)
+	{
 
+#else
 void h_compute_x_fluxes(int nX, int nY,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *zb, double *n,
   	double *DU1, double *DU2, double *DU3,
 	double dx){
+#endif
 
 	double uxROE, uyROE, cROE;                		// ROE averaged variables
 	double lambda1, lambda2, lambda3;				// Eigenvalues
@@ -318,9 +327,20 @@ void h_compute_x_fluxes(int nX, int nY,
 	normalX=1.0;
 	normalY=0.0;
 
+#ifdef __CUDACC__
+	// cada hilo de la gpu necesita saber a qué i, j está accediendo
+	int idc = (blockIdx.x * blockDim.x) + threadIdx.x;
+	// Salvaguarda para que idx sea menor que el número total 
+	// de operaciones que queremos hacer
+	if(idx < (nX - 1) * nY)	
+	{
+		j = idc / (nX - 1)	// row
+		i = idc % (nX - 1)	// col
+#else
    	// Process horizontal interfaces
 	for (int j = 0; j < nY; j++) {     // Rows  
 		for (int i = 0; i < nX-1; i++) { // Columns  
+#endif
             int left = IDX(i,j,nX);
             int right = IDX(i+1,j,nX);
 			if(h[left] >= tol9 || h[right] >= tol9){			// Wet wall
@@ -543,7 +563,9 @@ void h_compute_x_fluxes(int nX, int nY,
 				}
 
 			} // End wet walls
+#ifndef __CUDACC__
 		}
+#endif
 	} // End of fluxes calculation - Wall loop				
 
 }
@@ -829,13 +851,25 @@ void h_check_depth_positivity(int nCells,
 } 
 
 
-
+#ifdef  __CUDACC__
+__global__ void d_update_cells_2D(int nCells, 
+	double *h, double *qx, double *qy, double *ux, double *uy, 
+	double *DU1, double *DU2, double *DU3,
+	double dx, double dt){
+	
+	int ic = ( blockIdx.x * blockDim.x ) + threadIdx.x;
+	// puede que el último bloque intente acceder a posiciones que no debe,
+	// para ello ponemos esta pequeña salvaguarda
+	if (ic < nCells)
+	{
+#else
 void h_update_cells_2D(int nCells, 
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *DU1, double *DU2, double *DU3,
 	double dx, double dt){
 	
         for(int ic = 0; ic < nCells; ic++){
+#endif
 		h[ic] = h[ic] - DU1[ic]*dt/dx;
 		qx[ic] = qx[ic] - DU2[ic]*dt/dx;
 		qy[ic] = qy[ic] - DU3[ic]*dt/dx;
@@ -862,11 +896,9 @@ void h_update_cells_2D(int nCells,
 		// Reset U fluxes differences
 		DU1[ic]=0.0;
 		DU2[ic]=0.0;
-		DU3[ic]=0.0;
-		
-	}			
-
-
+		DU3[ic]=0.0;		
+	}	// Este corchete cierra o el for o el if 
+		// dependiendo de si estamos en gpu o cpu (__CUDACC__)
 }  
 
 void h_wet_dry_x(int nX, int nY,
@@ -908,11 +940,22 @@ void h_wet_dry_y(int nX, int nY,
 }
 
 
-
+#ifdef __CUDACC__
+__global__ void d_set_west_boundary(int nX, int nY, double *h, 
+	double *qx, double *qy, double *ux, double *uy, 
+	double QIN, double HIN)
+	{
+		int j = (blockIdx.x * blockDim.x) + threadIdx.x;
+		// No estoy seguro de si estos corchetes cierran lo que deben, creo que sí
+		if (j < nY)
+		{
+#else
 void h_set_west_boundary(int nX, int nY, double *h, 
 	double *qx, double *qy, double *ux, double *uy, 
 	double QIN, double HIN){
-	for(int j = 0; j < nY; j++) { //
+	for(int j = 0; j < nY; j++) { // Column 0, all rows (west)
+	// TODO: El endif tal vez vaya una línea más abajo
+#endif
 		int idx = IDX(0,j,nX);
 		
 		if(QIN > 0.0){
@@ -1079,3 +1122,46 @@ int write_vtk_cells(const char *filename, int nX, int nY, double *x, double *y,
 }
 
 
+#if __CUDACC__
+void queryAndSetDevice(int device_id) {
+    int device_count;
+    cudaError_t err = cudaGetDeviceCount(&device_count);
+    if (err != cudaSuccess) {
+        printf("CUDA Error: %s\n", cudaGetErrorString(err));
+        return;
+    }
+
+    printf("Number of CUDA devices available: %d\n", device_count);
+
+    for (int i = 0; i < device_count; i++) {
+        cudaDeviceProp device_prop;
+        cudaGetDeviceProperties(&device_prop, i);
+        printf("Device %d: %s\n", i, device_prop.name);
+        printf("  Compute capability: %d.%d\n", device_prop.major, device_prop.minor);
+        printf("  Total global memory: %lu bytes\n", device_prop.totalGlobalMem);
+        printf("  Multiprocessors: %d\n", device_prop.multiProcessorCount);
+        printf("  Max threads per block: %d\n", device_prop.maxThreadsPerBlock);
+        printf("  Max threads per SM: %d\n", device_prop.maxThreadsPerMultiProcessor);
+        printf("  Max grid size: %d x %d x %d\n", device_prop.maxGridSize[0], device_prop.maxGridSize[1], device_prop.maxGridSize[2]);
+        printf("  Max block size: %d x %d x %d\n", device_prop.maxThreadsDim[0], device_prop.maxThreadsDim[1], device_prop.maxThreadsDim[2]);
+        printf("\n");
+    }
+
+    if (device_id >= device_count || device_id < 0) {
+        printf("Invalid device ID. Please select a device ID between 0 and %d.\n", device_count - 1);
+        return;
+    }
+
+    // Set the desired device
+    err = cudaSetDevice(device_id);
+    if (err != cudaSuccess) {
+        printf("CUDA Error: %s\n", cudaGetErrorString(err));
+        return;
+    }
+
+    // Verify the selected device
+    int current_device;
+    cudaGetDevice(&current_device);
+    printf("Device %d is now active.\n", current_device);
+}
+#endif
