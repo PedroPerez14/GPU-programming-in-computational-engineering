@@ -187,7 +187,7 @@ void initialize_variables(int nCells,
 	double *h, double *qx, double *qy, double *ux, double *uy, 
 	double *n, 
 	double *DU1_0, double *DU2_0, double *DU3_0,
-	double *DU1_1, double *DU2_1, double *DU3_1,){
+	double *DU1_1, double *DU2_1, double *DU3_1){
 
     	for(int ic = 0; ic < nCells; ic++){
 		h[ic] = 0.0;
@@ -879,7 +879,7 @@ void update_cells_2D(int nCells,
 #endif
 		h[ic] = h[ic] - (DU1_0[ic] + DU1_1[ic])*dt/dx;
 		qx[ic] = qx[ic] - (DU2_0[ic] + DU2_1[ic])*dt/dx;
-		qy[ic] = qy[ic] - (DU1_0[ic] + DU1_1[ic])*dt/dx;
+		qy[ic] = qy[ic] - (DU3_0[ic] + DU3_1[ic])*dt/dx;
 
 		if(h[ic] >= tol9){
 			// Minimum depth control

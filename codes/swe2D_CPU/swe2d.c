@@ -123,9 +123,13 @@ int main(){
 	double *n;										// 2D averaged Manning Coefficient	
 	double *zb;										// Bed surface level	
 	
-	double *DU1;									// Variation conserved variable h in Dt
-	double *DU2;									// Variation conserved variable qx in Dt
-	double *DU3;									// Variation Conserved variable qy in Dt
+	double *DU1_0;									// Variation conserved variable h in Dt
+	double *DU2_0;									// Variation conserved variable qx in Dt
+	double *DU3_0;									// Variation Conserved variable qy in Dt
+
+	double *DU1_1;
+	double *DU2_1;
+	double *DU3_1;
 
 	double t, dt;
 	double dtSW;
@@ -149,9 +153,13 @@ int main(){
 	n = (double*) malloc( nCells* sizeof(double) );
 	zb = (double*) malloc( nCells* sizeof(double) );
 
-	DU1 = (double*) malloc( nCells* sizeof(double) );
-	DU2 = (double*) malloc( nCells* sizeof(double) );
-	DU3 = (double*) malloc( nCells* sizeof(double) );
+	DU1_0 = (double*) malloc( nCells* sizeof(double) );
+	DU2_0 = (double*) malloc( nCells* sizeof(double) );
+	DU3_0 = (double*) malloc( nCells* sizeof(double) );
+
+	DU1_1 = (double*) malloc( nCells* sizeof(double) );
+	DU2_1 = (double*) malloc( nCells* sizeof(double) );
+	DU3_1 = (double*) malloc( nCells* sizeof(double) );
 
 
 	#ifdef __CUDACC__
@@ -160,9 +168,14 @@ int main(){
 	double *d_n;										// 2D averaged Manning Coefficient	
 	double *d_zb;										// Bed surface level	
 	
-	double *d_DU1;									// Variation conserved variable h in Dt
-	double *d_DU2;									// Variation conserved variable qx in Dt
-	double *d_DU3;									// Variation Conserved variable qy in Dt
+	double *d_DU1_0;									// Variation conserved variable h in Dt
+	double *d_DU2_0;									// Variation conserved variable qx in Dt
+	double *d_DU3_0;									// Variation Conserved variable qy in Dt
+
+	double *d_DU1_1;									// Variation conserved variable h in Dt
+	double *d_DU2_1;									// Variation conserved variable qx in Dt
+	double *d_DU3_1;									// Variation Conserved variable qy in Dt
+
 
 	cudaMalloc((void**) &d_h, nCells*sizeof(double));
 	cudaMalloc((void**) &d_qx, nCells*sizeof(double));
@@ -173,9 +186,13 @@ int main(){
 	cudaMalloc((void**) &d_n, nCells*sizeof(double));
 	cudaMalloc((void**) &d_zb, nCells*sizeof(double));
 
-	cudaMalloc((void**) &d_DU1, nCells*sizeof(double));
-	cudaMalloc((void**) &d_DU2, nCells*sizeof(double));
-	cudaMalloc((void**) &d_DU3, nCells*sizeof(double));
+	cudaMalloc((void**) &d_DU1_0, nCells*sizeof(double));
+	cudaMalloc((void**) &d_DU2_0, nCells*sizeof(double));
+	cudaMalloc((void**) &d_DU3_0, nCells*sizeof(double));
+
+	cudaMalloc((void**) &d_DU1_1, nCells*sizeof(double));
+	cudaMalloc((void**) &d_DU2_1, nCells*sizeof(double));
+	cudaMalloc((void**) &d_DU3_1, nCells*sizeof(double));
 	#endif
 
 	//read raster elevation
@@ -254,7 +271,7 @@ int main(){
 	t = 0.0;					// Initial time
 
 	initialize_variables( nCells, h,  qx,  qy,  ux,  uy, 
-		n, DU1,  DU2, DU3);
+		n, DU1_0,  DU2_0, DU3_0, DU1_1,  DU2_1, DU3_1);
 
 	printf("\n\n>> Flow initialization completed");
 	fprintf(logFile,"\n\n>> Flow initialization completed");
@@ -282,9 +299,12 @@ int main(){
 	cudaMemcpy(d_zb, zb, nCells*sizeof(double), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_n, n, nCells*sizeof(double), cudaMemcpyHostToDevice);
 
-	cudaMemcpy(d_DU1, DU1, nCells*sizeof(double), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_DU2, DU2, nCells*sizeof(double), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_DU3, DU3, nCells*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_DU1_0, DU1_0, nCells*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_DU2_0, DU2_0, nCells*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_DU3_0, DU3_0, nCells*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_DU1_1, DU1_1, nCells*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_DU2_1, DU2_1, nCells*sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_DU3_1, DU3_1, nCells*sizeof(double), cudaMemcpyHostToDevice);
 
 	#endif
 
@@ -333,6 +353,11 @@ CPUtime = clock();
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 while(t <= simTime) {	
 
+	#ifdef __CUDACC__
+	cudaMemcpy(h, d_h, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+	cudaMemcpy(ux, d_ux, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+	cudaMemcpy(uy, d_uy, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+	#endif
 // TIME STEP COMPUTATION
 	compute_flow_time_step_2D(nX, nY,
 			h, ux, uy, dx, 
@@ -353,11 +378,13 @@ while(t <= simTime) {
 		compute_x_fluxes <<< (nX-1)*nY/nThreads+1 , nThreads >>>
 		(nX, nY,
     		d_h, d_qx, d_qy, d_ux, d_uy, d_zb, d_n, 
-		d_DU1, d_DU2, d_DU3, 
+		d_DU1_0, d_DU2_0, d_DU3_0, d_DU1_1, d_DU2_1, d_DU3_1, 
 		dx);
 	#else
 		compute_x_fluxes(nX, nY,
-    		h, qx, qy, ux, uy, zb, n, DU1, DU2, DU3, dx);
+    		h, qx, qy, ux, uy, zb, n, 
+			DU1_0, DU2_0, DU3_0, 
+			DU1_1, DU2_1, DU3_1, dx);
 	#endif
 
 	// Y-direction fluxes
@@ -365,18 +392,22 @@ while(t <= simTime) {
 		compute_y_fluxes<<<(nX*(nY-1))/nThreads+1,nThreads>>>(
 		nX, nY,
 		d_h, d_qx, d_qy, d_ux, d_uy, d_zb, d_n, 
-		d_DU1, d_DU2, d_DU3, 
+		d_DU1_0, d_DU2_0, d_DU3_0, d_DU1_1, d_DU2_1, d_DU3_1, 
 		dx);
 	#else
 		compute_y_fluxes(nX, nY,
-		h, qx, qy, ux, uy, zb, n, DU1, DU2, DU3, dx);
+		h, qx, qy, ux, uy, zb, n, 
+		DU1_0, DU2_0, DU3_0, 
+		DU1_1, DU2_1, DU3_1, dx);
 	#endif
 
-
-
+#ifdef __CUDACC__
+cudaMemcpy(DU1_0, d_DU1_0, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+cudaMemcpy(DU1_1, d_DU1_1, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+#endif
 // NEGATIVE WATER DEPTH CHECKING
 	check_depth_positivity( nCells,
-		h,  DU1,  dx,  &(dt));
+		h,  DU1_0,  DU1_1,  dx,  &(dt));
 
 	  
 // SHALLOW WATER CELL UPDATE
@@ -384,12 +415,14 @@ while(t <= simTime) {
 	update_cells_2D <<< nCells/nThreads+1 , nThreads>>>
 		(nCells,
 		d_h, d_qx, d_qy, d_ux, d_uy,
-		d_DU1, d_DU2, d_DU3,
+		d_DU1_0, d_DU2_0, d_DU3_0,
+		d_DU1_1, d_DU2_1, d_DU3_1,
 		dx, dt);
 #else
 	update_cells_2D(nCells,
 			h, qx, qy, ux, uy,
-			DU1, DU2, DU3,
+			DU1_0, DU2_0, DU3_0,
+			DU1_1, DU2_1, DU3_1,
 			dx, dt);
 #endif
 	
@@ -470,6 +503,11 @@ while(t <= simTime) {
 	if(t >= nout*Toutput){
 		//Cell data
 		//output vtk
+		#ifdef __CUDACC__
+		cudaMemcpy(h, d_h, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+		cudaMemcpy(ux, d_ux, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+		cudaMemcpy(uy, d_uy, nCells*sizeof(double), cudaMemcpyDeviceToHost);
+		#endif
 		sprintf(filename, "outputFiles/celldata%d.vtk",nout);
 		write_vtk_cells(filename, nX, nY, x, y, 
 			zb, h, ux, uy);
